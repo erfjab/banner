@@ -263,7 +263,6 @@ main() {
                 error "Invalid type. Usage: $SCRIPT_NAME ban <type|list>"
             fi
             ;;
-
         unban)
             if [ $# -eq 2 ] && [[ -n "${ban_lists[$2]:-}" ]]; then
                 unban_sites "$2"

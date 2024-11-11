@@ -23,8 +23,8 @@ declare -r -A COLORS=(
 
 # Ban types and their corresponding remote lists
 declare -A ban_lists=(
-    [speedtest]="${RAW_CONTENT_URL}/lists/speedtest.list"
-    [iranian]="${RAW_CONTENT_URL}/lists/iranian.list"
+    [speedtest]="${RAW_CONTENT_URL}/lists/speedtest.txt"
+    [iranian]="${RAW_CONTENT_URL}/lists/iranian.txt"
 )
 
 # Dependencies

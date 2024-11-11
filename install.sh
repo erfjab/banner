@@ -253,14 +253,17 @@ main() {
             uninstall_script
             ;;
         ban)
-            if [ "$2" = "list" ]; then
+            if [ -z "${2:-}" ]; then
+                error "Missing argument. Usage: $SCRIPT_NAME ban <type|list>"
+            elif [ "$2" = "list" ]; then
                 show_ban_lists
-            elif [ $# -eq 2 ] && [[ -n "${ban_lists[$2]:-}" ]]; then
+            elif [[ -n "${ban_lists[$2]:-}" ]]; then
                 ban_sites "$2"
             else
-                error "Usage: $SCRIPT_NAME ban <type|list>"
+                error "Invalid type. Usage: $SCRIPT_NAME ban <type|list>"
             fi
             ;;
+
         unban)
             if [ $# -eq 2 ] && [[ -n "${ban_lists[$2]:-}" ]]; then
                 unban_sites "$2"

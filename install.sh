@@ -180,9 +180,9 @@ check_status() {
                 [[ -z "$site" ]] && continue
                 if iptables -C INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null && \
                    iptables -C OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null; then
-                    success "$site: Banned"
+                    success "$site: ✓"
                 else
-                    warn "$site: Not Banned"
+                    warn "$site: ✗"
                 fi
             done < "$temp_file"
             rm -f "$temp_file"

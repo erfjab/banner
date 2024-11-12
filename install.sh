@@ -11,6 +11,7 @@ readonly REPO_URL="https://github.com/erfjab/${SCRIPT_NAME}"
 readonly RAW_CONTENT_URL="https://raw.githubusercontent.com/erfjab/${SCRIPT_NAME}/${BRANCH}"
 readonly INSTALL_DIR="/usr/local/bin"
 readonly SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
+readonly VERSION="0.1.0"
 
 # ANSI color codes
 declare -r -A COLORS=(
@@ -80,19 +81,6 @@ install_script() {
     curl -sL "${RAW_CONTENT_URL}/install.sh" -o "$SCRIPT_PATH" || error "Failed to download the script"
     chmod +x "$SCRIPT_PATH" || error "Failed to set execute permissions"
     success "Installation completed successfully!"
-}
-
-update_script() {
-    log "Updating $SCRIPT_NAME..."
-    [[ -f "$SCRIPT_PATH" ]] || error "Script is not installed. Please use 'install' command first."
-    
-    if [[ -f "$SCRIPT_PATH" ]]; then
-        rm -f "$SCRIPT_PATH" || error "Failed to remove script"
-    fi
-
-    curl -sL "${RAW_CONTENT_URL}/install.sh" -o "$SCRIPT_PATH" || error "Failed to download the script"
-    chmod +x "$SCRIPT_PATH" || error "Failed to set execute permissions"
-    success "Update completed successfully!"
 }
 
 uninstall_script() {
@@ -246,7 +234,8 @@ main() {
             install_script
             ;;
         update)
-            update_script
+            uninstall_script
+            sudo bash -c "$(curl -sL https://raw.githubusercontent.com/erfjab/banner/speedtest/install.sh)" @ install
             ;;
         uninstall)
             uninstall_script
@@ -275,6 +264,8 @@ main() {
         help)
             print_help
             ;;
+        v|version)
+            success "$VERSION"
         *)
             error "Unknown command: $1"
             ;;

@@ -24,7 +24,6 @@ declare -r -A COLORS=(
 # Ban types and their corresponding remote lists
 declare -A ban_lists=(
     [speedtest]="${RAW_CONTENT_URL}/lists/speedtest.txt"
-    [iranian]="${RAW_CONTENT_URL}/lists/iranian.txt"
 )
 
 # Dependencies
@@ -180,9 +179,9 @@ check_status() {
                 [[ -z "$site" ]] && continue
                 if iptables -C INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null && \
                    iptables -C OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null; then
-                    printf "%-30s %s\n" "$site" "${COLORS[GREEN]}✓${COLORS[RESET]}"
+                    printf "%-30s %s\n" "$site" "✓"
                 else
-                    printf "%-30s %s\n" "$site" "${COLORS[RED]}✗${COLORS[RESET]}"
+                    printf "%-30s %s\n" "$site" "✗"
                 fi
             done < "$temp_file"
             rm -f "$temp_file"

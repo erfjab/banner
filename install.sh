@@ -266,6 +266,7 @@ main() {
             ;;
         v|version)
             success "$VERSION"
+            ;;
         *)
             error "Unknown command: $1"
             ;;

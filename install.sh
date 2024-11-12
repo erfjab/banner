@@ -73,8 +73,8 @@ install_script() {
     check_dependencies
     
     if [[ -f "$SCRIPT_PATH" ]]; then
-        warn "Previous installation found. Please use 'update' command to update."
-        exit 1
+        warn "Previous installation found!"
+        rm -f "$SCRIPT_PATH" || error "Failed to remove script"
     fi
     
     curl -sL "${RAW_CONTENT_URL}/install.sh" -o "$SCRIPT_PATH" || error "Failed to download the script"
@@ -86,6 +86,11 @@ update_script() {
     log "Updating $SCRIPT_NAME..."
     [[ -f "$SCRIPT_PATH" ]] || error "Script is not installed. Please use 'install' command first."
     
+    if [[ -f "$SCRIPT_PATH" ]]; then
+        warn "Previous installation found!"
+        rm -f "$SCRIPT_PATH" || error "Failed to remove script"
+    fi
+
     curl -sL "${RAW_CONTENT_URL}/install.sh" -o "$SCRIPT_PATH" || error "Failed to download the script"
     chmod +x "$SCRIPT_PATH" || error "Failed to set execute permissions"
     success "Update completed successfully!"

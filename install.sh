@@ -11,7 +11,7 @@ readonly REPO_URL="https://github.com/erfjab/${SCRIPT_NAME}"
 readonly RAW_CONTENT_URL="https://raw.githubusercontent.com/erfjab/${SCRIPT_NAME}/${BRANCH}"
 readonly INSTALL_DIR="/usr/local/bin"
 readonly SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
-readonly VERSION="0.1.0"
+readonly VERSION="0.1.1"
 
 # ANSI color codes
 declare -r -A COLORS=(
@@ -112,6 +112,10 @@ ban_sites() {
             iptables -A INPUT -m string --string "$site" --algo bm -j DROP
             iptables -A OUTPUT -m string --string "$site" --algo bm -j DROP
             
+            # Add rule to bypass VPN traffic
+            iptables -A INPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT
+            iptables -A OUTPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT
+            
             success "Banned: $site"
         done < "$temp_file"
         rm -f "$temp_file"
@@ -135,6 +139,8 @@ unban_sites() {
             # Remove all matching string rules
             iptables -D INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
             iptables -D OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
+            iptables -D INPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+            iptables -D OUTPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
             
             success "Unbanned: $site"
         done < "$temp_file"
@@ -189,7 +195,7 @@ ${COLORS[YELLOW]}Commands:${COLORS[RESET]}
   install           Install the script
   update            Update to the latest version
   uninstall         Remove the script and all ban rules
-  ban <type>        Block websites of specified type (speedtest/iranian)
+  ban <type>        Block websites of specified type (speedtest)
   unban <type>      Remove blocks for specified type
   ban list          Show all available ban lists
   status            Show current ban status for all types
@@ -197,7 +203,6 @@ ${COLORS[YELLOW]}Commands:${COLORS[RESET]}
 
 ${COLORS[YELLOW]}Ban Types:${COLORS[RESET]}
   speedtest         Speed test websites
-  iranian          Iranian websites and services
 
 ${COLORS[YELLOW]}Features:${COLORS[RESET]}
 - Simple string-based blocking using iptables
@@ -208,7 +213,6 @@ ${COLORS[YELLOW]}Features:${COLORS[RESET]}
 ${COLORS[YELLOW]}Examples:${COLORS[RESET]}
   $SCRIPT_NAME install
   $SCRIPT_NAME ban speedtest
-  $SCRIPT_NAME ban iranian
   $SCRIPT_NAME unban speedtest
   $SCRIPT_NAME ban list
   $SCRIPT_NAME status

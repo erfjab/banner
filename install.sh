@@ -11,7 +11,7 @@ readonly REPO_URL="https://github.com/erfjab/${SCRIPT_NAME}"
 readonly RAW_CONTENT_URL="https://raw.githubusercontent.com/erfjab/${SCRIPT_NAME}/${BRANCH}"
 readonly INSTALL_DIR="/usr/local/bin"
 readonly SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
-readonly VERSION="0.1.1"
+readonly VERSION="0.1.2"
 
 # ANSI color codes
 declare -r -A COLORS=(
@@ -31,6 +31,7 @@ declare -A ban_lists=(
 declare -a DEPENDENCIES=(
     "iptables"
     "curl"
+    "iptables-persistent"
 )
 
 # Logging functions
@@ -86,7 +87,6 @@ install_script() {
 uninstall_script() {
     log "Uninstalling $SCRIPT_NAME..."
     if [[ -f "$SCRIPT_PATH" ]]; then
-
         rm -f "$SCRIPT_PATH" || error "Failed to remove script"
         success "Uninstallation completed successfully!"
     else
@@ -112,16 +112,17 @@ ban_sites() {
             iptables -A INPUT -m string --string "$site" --algo bm -j DROP
             iptables -A OUTPUT -m string --string "$site" --algo bm -j DROP
             
-            # Add rule to bypass VPN traffic
-            iptables -A INPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT
-            iptables -A OUTPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT
-            
             success "Banned: $site"
         done < "$temp_file"
         rm -f "$temp_file"
     else
         error "Failed to download ban list for type: $type"
     fi
+    
+    # Save iptables rules to make them persistent
+    iptables-save > /etc/iptables/rules.v4
+    systemctl enable iptables-persistent
+    systemctl start iptables-persistent
 }
 
 unban_sites() {
@@ -139,13 +140,16 @@ unban_sites() {
             # Remove all matching string rules
             iptables -D INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
             iptables -D OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
-            iptables -D INPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-            iptables -D OUTPUT -m string --string "$site" --algo bm -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
             
             success "Unbanned: $site"
         done < "$temp_file"
         rm -f "$temp_file"
     fi
+    
+    # Save iptables rules to make the changes persistent
+    iptables-save > /etc/iptables/rules.v4
+    systemctl enable iptables-persistent
+    systemctl start iptables-persistent
 }
 
 show_ban_lists() {

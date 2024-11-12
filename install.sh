@@ -99,11 +99,7 @@ update_script() {
 uninstall_script() {
     log "Uninstalling $SCRIPT_NAME..."
     if [[ -f "$SCRIPT_PATH" ]]; then
-        # Remove all ban rules
-        for type in "${!ban_lists[@]}"; do
-            unban_sites "$type" 2>/dev/null || true
-        done
-        
+
         rm -f "$SCRIPT_PATH" || error "Failed to remove script"
         success "Uninstallation completed successfully!"
     else

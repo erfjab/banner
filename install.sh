@@ -87,7 +87,6 @@ update_script() {
     [[ -f "$SCRIPT_PATH" ]] || error "Script is not installed. Please use 'install' command first."
     
     if [[ -f "$SCRIPT_PATH" ]]; then
-        warn "Previous installation found!"
         rm -f "$SCRIPT_PATH" || error "Failed to remove script"
     fi
 

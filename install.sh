@@ -137,16 +137,14 @@ ban_speedtest() {
 
     install_packages iptables ipset dnsutils
 
-    if ! ipset list wepn_speedtest_set &> /dev/null; then
 
-        for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
-            speedtest_ips+=("${_speedtest_ips[@]}")
-        done
+    for domain in "${domains[@]}"; do
+        _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+        speedtest_ips+=("${_speedtest_ips[@]}")
+    done
 
-        create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
-        success "Speedtest blocking has been successfully configured!"
-    fi
+    create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
+    success "Speedtest blocking has been successfully configured!"
 }
 
 
@@ -229,18 +227,15 @@ unban_speedtest() {
     install_packages iptables ipset dnsutils
 
 
-    if ! ipset list wepn_speedtest_set &> /dev/null; then
+
+    for domain in "${domains[@]}"; do
+        _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+        speedtest_ips+=("${_speedtest_ips[@]}")
+    done
 
 
-        for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
-            speedtest_ips+=("${_speedtest_ips[@]}")
-        done
-
-
-        create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
-        success "Speedtest blocks have been removed!"
-    fi
+    create_or_add_to_table wepn_speedtest ALLOW_WEBSITE "${speedtest_ips[@]}"
+    success "Speedtest blocks have been removed!"
 }
 
 # Check status

@@ -103,7 +103,7 @@ install_packages() {
     # check if package is not installed
     #    if ! (dpkg -s $package >/dev/null 2>&1); then
     if ! dpkg -l | grep -wq "^ii\s*$package\s"; then
-        print "[blue]Installing $package..."
+        log "Installing $package..."
 
 
         # install package
@@ -143,7 +143,7 @@ ban_speedtest() {
     if ! ipset list wepn_speedtest_set &> /dev/null; then
 
         for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {log $NF}'))
             speedtest_ips+=("${_speedtest_ips[@]}")
         done
 
@@ -236,7 +236,7 @@ unban_speedtest() {
 
 
         for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {log $NF}'))
             speedtest_ips+=("${_speedtest_ips[@]}")
         done
 

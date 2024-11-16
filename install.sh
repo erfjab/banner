@@ -213,34 +213,37 @@ create_or_add_to_table(){
 
 unban_speedtest() {
     log "Removing speedtest blocks..."
+
     domains=(
-    speedtest.net
-    www.speedtest.net
-    c.speedtest.net
-    speedcheck.org
-    www.speedcheck.org
-    a1.etrality.com
-    net.etrality.com
-    api.speedspot.org
-    fast.com
-    www.fast.com
+        speedtest.net
+        www.speedtest.net
+        c.speedtest.net
+        speedcheck.org
+        www.speedcheck.org
+        a1.etrality.com
+        net.etrality.com
+        api.speedspot.org
+        fast.com
+        www.fast.com
     )
 
     speedtest_ips=()
 
-
     install_packages iptables ipset dnsutils
+
 
     if ! ipset list wepn_speedtest_set &> /dev/null; then
 
 
-    for domain in "${domains[@]}"; do
-    _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
-    speedtest_ips+=("${_speedtest_ips[@]}")
-    done
+        for domain in "${domains[@]}"; do
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+            speedtest_ips+=("${_speedtest_ips[@]}")
+        done
 
-    create_or_add_to_table wepn_speedtest ALLOW_WEBSITE "${speedtest_ips[@]}"
-    success "Speedtest blocks have been removed!"
+
+        create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
+        success "Speedtest blocks have been removed!"
+    fi
 }
 
 # Check status

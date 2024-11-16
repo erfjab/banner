@@ -140,7 +140,7 @@ ban_speedtest() {
     if ! ipset list wepn_speedtest_set &> /dev/null; then
 
         for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {log $NF}'))
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
             speedtest_ips+=("${_speedtest_ips[@]}")
         done
 
@@ -233,7 +233,7 @@ unban_speedtest() {
 
 
         for domain in "${domains[@]}"; do
-            _speedtest_ips=($(host "$domain" | awk '/has address/ {log $NF}'))
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
             speedtest_ips+=("${_speedtest_ips[@]}")
         done
 

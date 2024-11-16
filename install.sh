@@ -6,12 +6,12 @@ IFS=$'\n\t'
 
 # Global constants
 readonly SCRIPT_NAME="banner"
-readonly BRANCH="speedtest"
+readonly BRANCH="master"
 readonly REPO_URL="https://github.com/erfjab/${SCRIPT_NAME}"
 readonly RAW_CONTENT_URL="https://raw.githubusercontent.com/erfjab/${SCRIPT_NAME}/${BRANCH}"
 readonly INSTALL_DIR="/usr/local/bin"
 readonly SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
-readonly VERSION="0.1.2"
+readonly VERSION="0.2.0"
 
 # ANSI color codes
 declare -r -A COLORS=(
@@ -22,17 +22,6 @@ declare -r -A COLORS=(
     [RESET]='\033[0m'
 )
 
-# Ban types and their corresponding remote lists
-declare -A ban_lists=(
-    [speedtest]="${RAW_CONTENT_URL}/lists/speedtest.txt"
-)
-
-# Dependencies
-declare -a DEPENDENCIES=(
-    "iptables"
-    "curl"
-    "iptables-persistent"
-)
 
 # Logging functions
 log() { printf "${COLORS[BLUE]}[INFO]${COLORS[RESET]} %s\n" "$*"; }
@@ -48,26 +37,38 @@ check_root() {
     [[ $EUID -eq 0 ]] || error "This script must be run as root"
 }
 
-check_dependencies() {
-    local missing_deps=()
-    for dep in "${DEPENDENCIES[@]}"; do
-        if ! command -v "$dep" &>/dev/null; then
-            missing_deps+=("$dep")
+# Install required packages
+install_dependencies() {
+    local packages=("iptables" "ipset" "dnsutils" "iptables-persistent" "curl")
+    
+    for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &>/dev/null; then
+            log "Installing $pkg..."
+            if command -v apt &>/dev/null; then
+                apt update && apt install -y "$pkg" || error "Failed to install $pkg"
+            elif command -v yum &>/dev/null; then
+                yum install -y "$pkg" || error "Failed to install $pkg"
+            else
+                error "Package manager not found. Please install manually: $pkg"
+            fi
         fi
     done
-
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        log "Installing missing dependencies: ${missing_deps[*]}"
-        if command -v apt &>/dev/null; then
-            apt update && apt install -y "${missing_deps[@]}" || error "Failed to install dependencies"
-        elif command -v yum &>/dev/null; then
-            yum install -y "${missing_deps[@]}" || error "Failed to install dependencies"
-        else
-            error "Package manager not found. Please install manually: ${missing_deps[*]}"
-        fi
-    fi
-    success "All dependencies are installed."
 }
+
+
+declare -a SPEEDTEST_DOMAINS=(
+    "speedtest.net"
+    "www.speedtest.net"
+    "c.speedtest.net"
+    "speedcheck.org"
+    "www.speedcheck.org"
+    "a1.etrality.com"
+    "net.etrality.com"
+    "api.speedspot.org"
+    "fast.com"
+    "www.fast.com"
+)
+
 
 # Installation functions
 install_script() {
@@ -84,6 +85,7 @@ install_script() {
     success "Installation completed successfully!"
 }
 
+
 uninstall_script() {
     log "Uninstalling $SCRIPT_NAME..."
     if [[ -f "$SCRIPT_PATH" ]]; then
@@ -94,189 +96,141 @@ uninstall_script() {
     fi
 }
 
-# Ban management functions
-ban_sites() {
-    local type="$1"
-    [[ -n "${ban_lists[$type]:-}" ]] || error "Invalid ban type: $type"
+
+ban_speedtest() {
+    local chain="speedtest_chain"
+    local set="speedtest_set"
+    local speedtest_ips=()
     
-    log "Applying $type bans..."
+    log "Starting speedtest blocking procedure..."
     
-    # Download and process the list
-    local temp_file
-    temp_file=$(mktemp)
-    if curl -sL "${ban_lists[$type]}" -o "$temp_file"; then
-        while IFS= read -r site; do
-            [[ -z "$site" ]] && continue
-            
-            # Add string match rules for all protocols
-            iptables -A INPUT -m string --string "$site" --algo bm -j DROP
-            iptables -A OUTPUT -m string --string "$site" --algo bm -j DROP
-            
-            success "Banned: $site"
-        done < "$temp_file"
-        rm -f "$temp_file"
-    else
-        error "Failed to download ban list for type: $type"
+    # Create ipset if it doesn't exist
+    if ! ipset list "$set" &>/dev/null; then
+        ipset create "$set" hash:net comment maxelem 20000
     fi
     
-    # Save iptables rules to make them persistent
-    iptables-save > /etc/iptables/rules.v4
-    systemctl enable iptables-persistent
-    systemctl start iptables-persistent
-}
-
-unban_sites() {
-    local type="$1"
-    [[ -n "${ban_lists[$type]:-}" ]] || error "Invalid ban type: $type"
+    # Resolve domains to IPs
+    for domain in "${SPEEDTEST_DOMAINS[@]}"; do
+        log "Resolving $domain..."
+        while IFS= read -r ip; do
+            [[ -n "$ip" ]] && speedtest_ips+=("$ip")
+        done < <(host "$domain" | awk '/has address/ {print $NF}')
+    done
     
-    log "Removing $type bans..."
-    
-    local temp_file
-    temp_file=$(mktemp)
-    if curl -sL "${ban_lists[$type]}" -o "$temp_file"; then
-        while IFS= read -r site; do
-            [[ -z "$site" ]] && continue
-            
-            # Remove all matching string rules
-            iptables -D INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
-            iptables -D OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null || true
-            
-            success "Unbanned: $site"
-        done < "$temp_file"
-        rm -f "$temp_file"
-    fi
-    
-    # Save iptables rules to make the changes persistent
-    iptables-save > /etc/iptables/rules.v4
-    systemctl enable iptables-persistent
-    systemctl start iptables-persistent
-}
-
-show_ban_lists() {
-    log "Available ban lists:"
-    for type in "${!ban_lists[@]}"; do
-        echo -e "\n${COLORS[BLUE]}$type:${COLORS[RESET]}"
-        if curl -sL "${ban_lists[$type]}"; then
-            echo
-        else
-            warn "Failed to fetch list"
+    # Add IPs to ipset
+    for ip in "${speedtest_ips[@]}"; do
+        if ! ipset test "$set" "$ip" &>/dev/null; then
+            ipset add "$set" "$ip" comment "speedtest"
+            success "Added $ip to blocklist"
         fi
     done
-}
-
-check_status() {
-    log "Checking ban status..."
-    for type in "${!ban_lists[@]}"; do
-        echo -e "\n${COLORS[BLUE]}$type status:${COLORS[RESET]}"
+    
+    # Create and configure iptables chain
+    if ! iptables -nL "$chain" >/dev/null 2>&1; then
+        iptables -N "$chain"
         
-        # Check iptables rules for each site
-        local temp_file
-        temp_file=$(mktemp)
-        if curl -sL "${ban_lists[$type]}" -o "$temp_file"; then
-            while IFS= read -r site; do
-                [[ -z "$site" ]] && continue
-                if iptables -C INPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null && \
-                   iptables -C OUTPUT -m string --string "$site" --algo bm -j DROP 2>/dev/null; then
-                    printf "%-30s %s\n" "$site" "✓"
-                else
-                    printf "%-30s %s\n" "$site" "✗"
-                fi
-            done < "$temp_file"
-            rm -f "$temp_file"
-        else
-            warn "Failed to fetch ban list"
+        # Block by IP using ipset
+        iptables -I "$chain" -m set --match-set "$set" dst -j DROP
+        
+        # Block by string matching
+        iptables -I "$chain" -m string --string "speedtest" --algo bm -j DROP
+        iptables -I "$chain" -m string --string "speedcheck" --algo bm -j DROP
+        iptables -I "$chain" -m string --string "fast.com" --algo bm -j DROP
+        
+        # Apply chain to both INPUT and OUTPUT
+        iptables -I INPUT -j "$chain"
+        iptables -I OUTPUT -j "$chain"
+    fi
+    
+    # Save rules
+    iptables-save > /etc/iptables/rules.v4
+    ipset save > /etc/iptables/ipset.rules
+    
+    systemctl enable iptables-persistent
+    systemctl start iptables-persistent
+    
+    success "Speedtest blocking has been successfully configured!"
+}
+
+
+# Unban function
+unban_speedtest() {
+    local chain="speedtest_chain"
+    local set="speedtest_set"
+    
+    log "Removing speedtest blocks..."
+    
+    # Remove iptables chain
+    if iptables -nL "$chain" >/dev/null 2>&1; then
+        iptables -D INPUT -j "$chain" 2>/dev/null || true
+        iptables -D OUTPUT -j "$chain" 2>/dev/null || true
+        iptables -F "$chain" 2>/dev/null || true
+        iptables -X "$chain" 2>/dev/null || true
+    fi
+    
+    # Remove ipset
+    if ipset list "$set" &>/dev/null; then
+        ipset destroy "$set"
+    fi
+    
+    # Save changes
+    iptables-save > /etc/iptables/rules.v4
+    ipset save > /etc/iptables/ipset.rules
+    
+    success "Speedtest blocks have been removed!"
+}
+
+
+# Check status
+check_status() {
+    local chain="speedtest_chain"
+    local set="speedtest_set"
+    
+    log "Checking speedtest blocking status..."
+    
+    if iptables -nL "$chain" >/dev/null 2>&1; then
+        success "Speedtest blocking is active"
+        if ipset list "$set" &>/dev/null; then
+            echo -e "\nBlocked IPs:"
+            ipset list "$set"
         fi
-    done
+    else
+        warn "Speedtest blocking is not active"
+    fi
 }
 
-print_help() {
-    cat <<EOF
-${COLORS[BLUE]}Banner Script${COLORS[RESET]} - Simple website blocking tool
-
-${COLORS[YELLOW]}Usage:${COLORS[RESET]} $SCRIPT_NAME <command> [options]
-
-${COLORS[YELLOW]}Commands:${COLORS[RESET]}
-  install           Install the script
-  update            Update to the latest version
-  uninstall         Remove the script and all ban rules
-  ban <type>        Block websites of specified type (speedtest)
-  unban <type>      Remove blocks for specified type
-  ban list          Show all available ban lists
-  status            Show current ban status for all types
-  help              Show this help message
-
-${COLORS[YELLOW]}Ban Types:${COLORS[RESET]}
-  speedtest         Speed test websites
-
-${COLORS[YELLOW]}Features:${COLORS[RESET]}
-- Simple string-based blocking using iptables
-- Blocks both incoming and outgoing traffic
-- Downloads ban lists directly from repository
-- Persistent across reboots (when used with iptables-persistent)
-
-${COLORS[YELLOW]}Examples:${COLORS[RESET]}
-  $SCRIPT_NAME install
-  $SCRIPT_NAME ban speedtest
-  $SCRIPT_NAME unban speedtest
-  $SCRIPT_NAME ban list
-  $SCRIPT_NAME status
-
-${COLORS[YELLOW]}Notes:${COLORS[RESET]}
-- This script must be run as root
-- Requires working internet connection to fetch ban lists
-- Ban lists are maintained in the GitHub repository
-EOF
-}
 
 # Main function
 main() {
     check_root
-
-    if [ $# -eq 0 ]; then
-        print_help
-        exit 0
-    fi
-
-    case "$1" in
+    
+    case "${1:-}" in
         install)
             install_script
             ;;
         update)
             uninstall_script
-            sudo bash -c "$(curl -sL https://raw.githubusercontent.com/erfjab/banner/speedtest/install.sh)" @ install
+            sudo bash -c "$(curl -sL https://raw.githubusercontent.com/erfjab/banner/master/install.sh)" @ install
             ;;
         uninstall)
             uninstall_script
             ;;
         ban)
-            if [ -z "${2:-}" ]; then
-                error "Missing argument. Usage: $SCRIPT_NAME ban <type|list>"
-            elif [ "$2" = "list" ]; then
-                show_ban_lists
-            elif [[ -n "${ban_lists[$2]:-}" ]]; then
-                ban_sites "$2"
-            else
-                error "Invalid type. Usage: $SCRIPT_NAME ban <type|list>"
-            fi
+            install_dependencies
+            ban_speedtest
             ;;
         unban)
-            if [ $# -eq 2 ] && [[ -n "${ban_lists[$2]:-}" ]]; then
-                unban_sites "$2"
-            else
-                error "Usage: $SCRIPT_NAME unban <type>"
-            fi
+            unban_speedtest
             ;;
         status)
             check_status
-            ;;
-        help)
-            print_help
             ;;
         v|version)
             success "$VERSION"
             ;;
         *)
-            error "Unknown command: $1"
+            echo "Usage: $0 {ban|unban|status}"
+            exit 1
             ;;
     esac
 }

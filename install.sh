@@ -111,9 +111,6 @@ install_packages() {
         apt --fix-broken install -y &> /dev/null
         apt install $package -y &> /dev/null
         fi
-
-        sleep 0.5
-        clear_logs 1
     fi
 
     done

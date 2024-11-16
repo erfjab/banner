@@ -95,105 +95,164 @@ uninstall_script() {
     fi
 }
 
+install_packages() {
+
+    for package in "$@"
+    do
+
+    # check if package is not installed
+    #    if ! (dpkg -s $package >/dev/null 2>&1); then
+    if ! dpkg -l | grep -wq "^ii\s*$package\s"; then
+        print "[blue]Installing $package..."
+
+
+        # install package
+        if ! apt install $package -y &> /dev/null; then
+        apt --fix-broken install -y &> /dev/null
+        apt install $package -y &> /dev/null
+        fi
+
+        sleep 0.5
+        clear_logs 1
+    fi
+
+    done
+}
+
 
 ban_speedtest() {
-    local chain="speedtest_chain"
-    local set="speedtest_set"
-    
     log "Starting speedtest blocking procedure..."
-    
-    # Create ipset if it doesn't exist
-    if ! ipset list "$set" &>/dev/null; then
-        ipset create "$set" hash:net comment maxelem 20000
-    fi
-    
-    # Add domains to ipset
-    for domain in "${SPEEDTEST_DOMAINS[@]}"; do
-        log "Adding $domain to blocklist..."
-        ipset add "$set" "$domain" comment "speedtest-domain"
-        success "Added $domain to blocklist"
+
+    domains=(
+    speedtest.net
+    www.speedtest.net
+    c.speedtest.net
+    speedcheck.org
+    www.speedcheck.org
+    a1.etrality.com
+    net.etrality.com
+    api.speedspot.org
+    fast.com
+    www.fast.com
+    )
+
+    speedtest_ips=()
+
+
+    install_packages iptables ipset dnsutils
+
+    if ! ipset list wepn_speedtest_set &> /dev/null; then
+
+
+    for domain in "${domains[@]}"; do
+    _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+    speedtest_ips+=("${_speedtest_ips[@]}")
     done
-    
-    # Create and configure iptables chain
-    if ! iptables -nL "$chain" >/dev/null 2>&1; then
-        iptables -N "$chain"
-        
-        # Block HTTP and HTTPS traffic for domains
-        iptables -I "$chain" -p tcp --dport 80 -m string --string "Host:" --algo bm --from 0 --to 100 -j DROP
-        iptables -I "$chain" -p tcp --dport 443 -m string --string "Host:" --algo bm --from 0 --to 100 -j DROP
-        
-        # Add domain-based blocking rules
-        for domain in "${SPEEDTEST_DOMAINS[@]}"; do
-            iptables -I "$chain" -p tcp -m string --string "$domain" --algo bm -j DROP
-        done
-        
-        # Apply chain to OUTPUT and FORWARD
-        iptables -I OUTPUT 1 -j "$chain"
-        iptables -I FORWARD 1 -j "$chain"
-        
-        # Handle wepn_allow_websites_chain if it exists
-        if iptables -nL wepn_allow_websites_chain >/dev/null 2>&1; then
-            iptables -D OUTPUT -j wepn_allow_websites_chain
-            iptables -I OUTPUT 1 -j wepn_allow_websites_chain
-            iptables -D FORWARD -j wepn_allow_websites_chain
-            iptables -I FORWARD 1 -j wepn_allow_websites_chain
-        fi
-    fi
-    
-    # Save rules (compatible with both Debian and RHEL-based systems)
-    if command -v netfilter-persistent &>/dev/null; then
-        netfilter-persistent save
-    elif [ -d "/etc/iptables" ]; then
-        iptables-save > /etc/iptables/rules.v4
-        ipset save > /etc/iptables/ipset.rules
-    else
-        mkdir -p /etc/iptables
-        iptables-save > /etc/iptables/rules.v4
-        ipset save > /etc/iptables/ipset.rules
-    fi
-    
+
+    create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
     success "Speedtest blocking has been successfully configured!"
+
+}
+
+create_or_add_to_table(){
+    local set="$1_set"
+    local chain="$1_chain"
+    local rule="$2"
+    shift 2
+    local ips=("$@")
+
+
+    if [ "$rule" != "BLOCK_IPSCAN" ] && [ "$rule" != "BLOCK_BITTORRENT" ] ; then
+    # create set if does not exist
+    if ! ipset list "$set" &>/dev/null; then
+        ipset create $set hash:net comment maxelem 20000
+    fi
+
+    # add all ips to set
+    for (( i=0; i<${#ips[@]}; i++ ))
+    do
+
+        # ip and comment  1.2.3.4>some_comment
+        if [[ "${ips[$i]}" =~ ">" ]]; then
+        ip=$(echo "${ips[$i]}" | cut -d '>' -f 1)
+        comment=$(echo "${ips[$i]}" | cut -d '>' -f 2)
+        else
+        comment=""
+        ip="${ips[$i]}"
+        fi
+
+
+
+        if ! ipset test $set "$ip" &> /dev/null; then
+        if [[ -z "$comment" ]]; then
+            ipset add $set "$ip"
+        else
+            ipset add $set "$ip" comment "$comment"
+        fi
+        fi
+
+        [ "${#ips[@]}" -gt 50 ] && show_progress $((i + 1)) ${#ips[@]}
+
+    done
+    fi
+
+    # create chain
+    if ! iptables -nL $chain >/dev/null 2>&1; then
+    iptables -N $chain
+
+    if [ "$rule" == "BLOCK_WEBSITE" ]; then
+        iptables -I $chain -p tcp --dport 80 -m set --match-set $set dst -j REJECT
+        iptables -I $chain -p tcp --dport 443 -m set --match-set $set dst -j REJECT
+        iptables -I OUTPUT 1 -j $chain
+        iptables -I FORWARD 1 -j $chain
+        if iptables -nL wepn_allow_websites_chain >/dev/null 2>&1; then
+        iptables -D OUTPUT -j wepn_allow_websites_chain
+        iptables -I OUTPUT 1 -j wepn_allow_websites_chain
+        iptables -D FORWARD -j wepn_allow_websites_chain
+        iptables -I FORWARD 1 -j wepn_allow_websites_chain
+        fi
+    elif [ "$rule" == "ALLOW_WEBSITE" ]; then
+        iptables -I $chain -p tcp --dport 80 -m set --match-set $set dst -j ACCEPT
+        iptables -I $chain -p tcp --dport 443 -m set --match-set $set dst -j ACCEPT
+        iptables -I OUTPUT 1 -j $chain
+        iptables -I FORWARD 1 -j $chain
+    fi
+
+    # save
+    iptables-save > /root/.wepn/iptables-rules
+    ipset save > /root/.wepn/ipset-rules
 }
 
 
 unban_speedtest() {
-    local chain="speedtest_chain"
-    local set="speedtest_set"
-    
     log "Removing speedtest blocks..."
-    
-    # Remove iptables chain
-    if iptables -nL "$chain" >/dev/null 2>&1; then
-        iptables -D OUTPUT -j "$chain" 2>/dev/null || true
-        iptables -D FORWARD -j "$chain" 2>/dev/null || true
-        
-        # Restore wepn_allow_websites_chain if exists
-        if iptables -nL wepn_allow_websites_chain >/dev/null 2>&1; then
-            iptables -I OUTPUT 1 -j wepn_allow_websites_chain
-            iptables -I FORWARD 1 -j wepn_allow_websites_chain
-        fi
-        
-        iptables -F "$chain" 2>/dev/null || true
-        iptables -X "$chain" 2>/dev/null || true
-    fi
-    
-    # Remove ipset
-    if ipset list "$set" &>/dev/null; then
-        ipset destroy "$set"
-    fi
-    
-    # Save rules (compatible with both Debian and RHEL-based systems)
-    if command -v netfilter-persistent &>/dev/null; then
-        netfilter-persistent save
-    elif [ -d "/etc/iptables" ]; then
-        iptables-save > /etc/iptables/rules.v4
-        ipset save > /etc/iptables/ipset.rules
-    else
-        mkdir -p /etc/iptables
-        iptables-save > /etc/iptables/rules.v4
-        ipset save > /etc/iptables/ipset.rules
-    fi
-    
+    domains=(
+    speedtest.net
+    www.speedtest.net
+    c.speedtest.net
+    speedcheck.org
+    www.speedcheck.org
+    a1.etrality.com
+    net.etrality.com
+    api.speedspot.org
+    fast.com
+    www.fast.com
+    )
+
+    speedtest_ips=()
+
+
+    install_packages iptables ipset dnsutils
+
+    if ! ipset list wepn_speedtest_set &> /dev/null; then
+
+
+    for domain in "${domains[@]}"; do
+    _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+    speedtest_ips+=("${_speedtest_ips[@]}")
+    done
+
+    create_or_add_to_table wepn_speedtest ALLOW_WEBSITE "${speedtest_ips[@]}"
     success "Speedtest blocks have been removed!"
 }
 

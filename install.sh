@@ -151,7 +151,6 @@ ban_speedtest() {
 
     create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
     success "Speedtest blocking has been successfully configured!"
-
 }
 
 create_or_add_to_table(){
@@ -161,66 +160,54 @@ create_or_add_to_table(){
     shift 2
     local ips=("$@")
 
+    if [ "$rule" != "BLOCK_IPSCAN" ] && [ "$rule" != "BLOCK_BITTORRENT" ]; then
+        # Create set if it does not exist
+        if ! ipset list "$set" &>/dev/null; then
+            ipset create "$set" hash:net comment maxelem 20000
+        fi
 
-    if [ "$rule" != "BLOCK_IPSCAN" ] && [ "$rule" != "BLOCK_BITTORRENT" ] ; then
-    # create set if does not exist
-    if ! ipset list "$set" &>/dev/null; then
-        ipset create $set hash:net comment maxelem 20000
+        # Add all IPs to the set
+        for ip_data in "${ips[@]}"; do
+            # Parse IP and comment (if any)
+            if [[ "$ip_data" =~ ">" ]]; then
+                ip=$(echo "$ip_data" | cut -d '>' -f 1)
+                comment=$(echo "$ip_data" | cut -d '>' -f 2)
+            else
+                ip="$ip_data"
+                comment=""
+            fi
+
+            # Add IP to the set
+            if ! ipset test "$set" "$ip" &>/dev/null; then
+                if [[ -z "$comment" ]]; then
+                    ipset add "$set" "$ip"
+                else
+                    ipset add "$set" "$ip" comment "$comment"
+                fi
+            fi
+        done
     fi
 
-    # add all ips to set
-    for (( i=0; i<${#ips[@]}; i++ ))
-    do
+    # Create chain
+    if ! iptables -nL "$chain" >/dev/null 2>&1; then
+        iptables -N "$chain"
 
-        # ip and comment  1.2.3.4>some_comment
-        if [[ "${ips[$i]}" =~ ">" ]]; then
-        ip=$(echo "${ips[$i]}" | cut -d '>' -f 1)
-        comment=$(echo "${ips[$i]}" | cut -d '>' -f 2)
-        else
-        comment=""
-        ip="${ips[$i]}"
+        if [ "$rule" == "BLOCK_WEBSITE" ]; then
+            iptables -I "$chain" -p tcp --dport 80 -m set --match-set "$set" dst -j REJECT
+            iptables -I "$chain" -p tcp --dport 443 -m set --match-set "$set" dst -j REJECT
+            iptables -I OUTPUT 1 -j "$chain"
+            iptables -I FORWARD 1 -j "$chain"
+        elif [ "$rule" == "ALLOW_WEBSITE" ]; then
+            iptables -I "$chain" -p tcp --dport 80 -m set --match-set "$set" dst -j ACCEPT
+            iptables -I "$chain" -p tcp --dport 443 -m set --match-set "$set" dst -j ACCEPT
+            iptables -I OUTPUT 1 -j "$chain"
+            iptables -I FORWARD 1 -j "$chain"
         fi
 
-
-
-        if ! ipset test $set "$ip" &> /dev/null; then
-        if [[ -z "$comment" ]]; then
-            ipset add $set "$ip"
-        else
-            ipset add $set "$ip" comment "$comment"
-        fi
-        fi
-
-        [ "${#ips[@]}" -gt 50 ] && show_progress $((i + 1)) ${#ips[@]}
-
-    done
+        # Save rules
+        iptables-save > /root/.wepn/iptables-rules
+        ipset save > /root/.wepn/ipset-rules
     fi
-
-    # create chain
-    if ! iptables -nL $chain >/dev/null 2>&1; then
-    iptables -N $chain
-
-    if [ "$rule" == "BLOCK_WEBSITE" ]; then
-        iptables -I $chain -p tcp --dport 80 -m set --match-set $set dst -j REJECT
-        iptables -I $chain -p tcp --dport 443 -m set --match-set $set dst -j REJECT
-        iptables -I OUTPUT 1 -j $chain
-        iptables -I FORWARD 1 -j $chain
-        if iptables -nL wepn_allow_websites_chain >/dev/null 2>&1; then
-        iptables -D OUTPUT -j wepn_allow_websites_chain
-        iptables -I OUTPUT 1 -j wepn_allow_websites_chain
-        iptables -D FORWARD -j wepn_allow_websites_chain
-        iptables -I FORWARD 1 -j wepn_allow_websites_chain
-        fi
-    elif [ "$rule" == "ALLOW_WEBSITE" ]; then
-        iptables -I $chain -p tcp --dport 80 -m set --match-set $set dst -j ACCEPT
-        iptables -I $chain -p tcp --dport 443 -m set --match-set $set dst -j ACCEPT
-        iptables -I OUTPUT 1 -j $chain
-        iptables -I FORWARD 1 -j $chain
-    fi
-
-    # save
-    iptables-save > /root/.wepn/iptables-rules
-    ipset save > /root/.wepn/ipset-rules
 }
 
 

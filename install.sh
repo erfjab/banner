@@ -124,34 +124,34 @@ ban_speedtest() {
     log "Starting speedtest blocking procedure..."
 
     domains=(
-    speedtest.net
-    www.speedtest.net
-    c.speedtest.net
-    speedcheck.org
-    www.speedcheck.org
-    a1.etrality.com
-    net.etrality.com
-    api.speedspot.org
-    fast.com
-    www.fast.com
+        speedtest.net
+        www.speedtest.net
+        c.speedtest.net
+        speedcheck.org
+        www.speedcheck.org
+        a1.etrality.com
+        net.etrality.com
+        api.speedspot.org
+        fast.com
+        www.fast.com
     )
 
     speedtest_ips=()
-
 
     install_packages iptables ipset dnsutils
 
     if ! ipset list wepn_speedtest_set &> /dev/null; then
 
+        for domain in "${domains[@]}"; do
+            _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
+            speedtest_ips+=("${_speedtest_ips[@]}")
+        done
 
-    for domain in "${domains[@]}"; do
-    _speedtest_ips=($(host "$domain" | awk '/has address/ {print $NF}'))
-    speedtest_ips+=("${_speedtest_ips[@]}")
-    done
-
-    create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
-    success "Speedtest blocking has been successfully configured!"
+        create_or_add_to_table wepn_speedtest BLOCK_WEBSITE "${speedtest_ips[@]}"
+        success "Speedtest blocking has been successfully configured!"
+    fi
 }
+
 
 create_or_add_to_table(){
     local set="$1_set"
